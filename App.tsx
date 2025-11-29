@@ -1,13 +1,13 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Upload, Download, Loader2, Image as ImageIcon, Sparkles, ChevronRight, Info, Rotate3d, FileUp, Globe, Key, HelpCircle, X, Camera, Monitor, RectangleHorizontal } from 'lucide-react';
+import { Upload, Download, Loader2, Image as ImageIcon, Sparkles, ChevronRight, Info, Rotate3d, FileUp, Globe, Key, HelpCircle, X, Camera, Monitor, RectangleHorizontal, FileText, Copy, Check, Phone } from 'lucide-react';
 import { ArcVisualizer } from './components/ArcVisualizer';
-import { generateRotatedView } from './services/geminiService';
+import { generateRotatedView, generateCinematicPrompt } from './services/geminiService';
 import type { ImageState, GeneratedResult, Language, Resolution, AspectRatio } from './types';
 
 // Localization Dictionary
 const TEXTS = {
   EN: {
-    title: "DINO AI MEDIA",
+    title: "DINO AI MEDIA | 3D orbit studio | Auto Prompt & Image",
     docs: "User Guide",
     apiKeyPlaceholder: "Enter Gemini API Key",
     sourceObject: "Source Object",
@@ -21,7 +21,12 @@ const TEXTS = {
     elevation: "Elevation (Vertical)",
     roll: "Roll (Tilt)",
     generateBtn: "Generate View",
-    generating: "Synthesizing New View...",
+    generatePromptBtn: "Generate Prompt",
+    generating: "Synthesizing View...",
+    generatingPrompt: "Writing Prompt...",
+    promptTitle: "Generated Cinematic Prompt",
+    copy: "Copy",
+    copied: "Copied!",
     generatedAngles: "Generated Angles",
     noViews: "No views generated yet",
     noViewsHint: "Rotate the model and click Generate",
@@ -31,10 +36,12 @@ const TEXTS = {
     errorGen: "Failed to generate. Check API Key and try again.",
     missingKey: "Please enter your Gemini API Key in the top right corner.",
     guideTitle: "How to use",
-    guideStep1: "1. Enter your Gemini API Key in the top right menu.",
-    guideStep2: "2. Upload an image of an object or person.",
-    guideStep3: "3. Drag the 3D viewer to find the desired angle.",
-    guideStep4: "4. Click 'Generate' to create a new view using AI.",
+    guideStep1: "1. Enter Gemini API Key (Top Right).",
+    guideStep2: "2. Upload an image of an object/person.",
+    guideStep3: "3. Use 'Cinematic Shots' or drag 3D view.",
+    guideStep4: "4. Select Resolution (1K/2K/4K) & Ratio.",
+    guideStep5: "5. Click 'Generate View' for images or 'Generate Prompt' for text.",
+    copyright: "Copyright © Nguyen Quoc Hung - Phone: 0914286003",
     note: "Note: The API Key is stored locally in your browser.",
     resolution: "Resolution",
     aspectRatio: "Aspect Ratio",
@@ -52,17 +59,36 @@ const TEXTS = {
         dutch: "Dutch Angle",
         ots: "OTS",
         pov: "POV",
-        // New Presets
         drone: "Drone View",
         face: "Face Close-up",
         fisheye: "Fisheye",
         macro: "Macro Detail",
         isometric: "Isometric",
         panorama: "Panorama"
+    },
+    presetDescs: {
+        eyeLevel: "Neutral angle, creates a sense of equality and realism.",
+        lowAngle: "Looking up at subject. Makes subject look powerful/dominant.",
+        highAngle: "Looking down. Makes subject look smaller or vulnerable.",
+        birdEye: "Directly overhead (Top-down). Shows layout and context.",
+        wormEye: "Directly from below. Extreme power or surreal scale.",
+        wide: "Captures the subject and its surroundings.",
+        medium: "Waist-up view. Standard for interaction.",
+        closeUp: "Focuses on the head/face. Shows emotion.",
+        ecu: "Tight focus on a specific detail (eyes, lips).",
+        dutch: "Tilted horizon. Creates tension or disorientation.",
+        ots: "Over-the-shoulder. Conversational perspective.",
+        pov: "First-person view. Through someone's eyes.",
+        drone: "High altitude aerial shot. Vast scale.",
+        face: "Portrait style focus on facial features.",
+        fisheye: "Ultra-wide distorted barrel effect.",
+        macro: "Microscopic detail of textures.",
+        isometric: "3D technical view, parallel projection.",
+        panorama: "Wide aspect view of the environment."
     }
   },
   VIE: {
-    title: "DINO AI MEDIA",
+    title: "DINO AI MEDIA | 3D orbit studio | Auto Prompt & Image",
     docs: "Hướng dẫn sử dụng",
     apiKeyPlaceholder: "Nhập API Key Gemini",
     sourceObject: "Đối tượng gốc",
@@ -76,7 +102,12 @@ const TEXTS = {
     elevation: "Góc dọc (Elevation)",
     roll: "Góc nghiêng (Roll)",
     generateBtn: "Tạo ảnh",
-    generating: "Đang tổng hợp góc nhìn mới...",
+    generatePromptBtn: "Tạo Prompt",
+    generating: "Đang tạo ảnh...",
+    generatingPrompt: "Đang viết Prompt...",
+    promptTitle: "Prompt Điện Ảnh Đã Tạo",
+    copy: "Sao chép",
+    copied: "Đã chép!",
     generatedAngles: "Các góc đã tạo",
     noViews: "Chưa có ảnh nào được tạo",
     noViewsHint: "Xoay mô hình và nhấn nút Tạo",
@@ -86,10 +117,12 @@ const TEXTS = {
     errorGen: "Tạo ảnh thất bại. Kiểm tra API Key và thử lại.",
     missingKey: "Vui lòng nhập API Key Gemini ở góc phải màn hình.",
     guideTitle: "Hướng dẫn sử dụng",
-    guideStep1: "1. Nhập API Key Gemini của bạn ở menu góc phải.",
+    guideStep1: "1. Nhập API Key Gemini ở menu góc phải.",
     guideStep2: "2. Tải lên một ảnh chứa đối tượng hoặc nhân vật.",
-    guideStep3: "3. Kéo thả vùng 3D để chọn góc nhìn mong muốn.",
-    guideStep4: "4. Nhấn 'Tạo ảnh' để AI vẽ lại góc nhìn mới.",
+    guideStep3: "3. Chọn 'Góc quay điện ảnh' hoặc kéo xoay 3D.",
+    guideStep4: "4. Chọn Độ phân giải (1K/2K/4K) và Tỉ lệ khung hình.",
+    guideStep5: "5. Nhấn 'Tạo ảnh' để vẽ hoặc 'Tạo Prompt' để lấy text.",
+    copyright: "Bản quyền sử dụng thuộc về Nguyễn Quốc Hưng SDT: 0914286003",
     note: "Lưu ý: API Key được lưu cục bộ trên trình duyệt của bạn.",
     resolution: "Độ phân giải",
     aspectRatio: "Tỉ lệ khung hình",
@@ -107,13 +140,32 @@ const TEXTS = {
         dutch: "Góc nghiêng",
         ots: "Qua vai",
         pov: "Góc nhìn thứ nhất",
-        // New Presets
         drone: "Flycam (Drone)",
         face: "Cận cảnh mặt",
         fisheye: "Mắt cá (Fisheye)",
         macro: "Macro (Chi tiết)",
         isometric: "Isometric 3D",
         panorama: "Panorama"
+    },
+    presetDescs: {
+        eyeLevel: "Góc nhìn trung tính, tạo cảm giác chân thực.",
+        lowAngle: "Nhìn từ dưới lên. Làm đối tượng trông quyền lực hơn.",
+        highAngle: "Nhìn từ trên xuống. Làm đối tượng nhỏ bé hơn.",
+        birdEye: "Nhìn thẳng từ đỉnh đầu xuống (Top-down).",
+        wormEye: "Nhìn thẳng từ dưới đất lên trời.",
+        wide: "Lấy cả đối tượng và bối cảnh xung quanh.",
+        medium: "Cảnh từ thắt lưng trở lên.",
+        closeUp: "Tập trung vào khuôn mặt và biểu cảm.",
+        ecu: "Đặc tả chi tiết nhỏ (mắt, môi).",
+        dutch: "Nghiêng đường chân trời. Tạo kịch tính.",
+        ots: "Góc nhìn qua vai người đối diện.",
+        pov: "Góc nhìn thứ nhất (như mắt người xem).",
+        drone: "Bay trên cao nhìn xuống bao quát.",
+        face: "Chụp chân dung tập trung vào mặt.",
+        fisheye: "Hiệu ứng ống kính cong (mắt cá).",
+        macro: "Soi chi tiết bề mặt/chất liệu.",
+        isometric: "Góc nhìn kỹ thuật 3D song song.",
+        panorama: "Khung hình rộng kéo dài."
     }
   }
 };
@@ -121,6 +173,7 @@ const TEXTS = {
 interface Preset {
     id: string;
     labelKey: keyof typeof TEXTS.EN.presetLabels;
+    descKey: keyof typeof TEXTS.EN.presetDescs;
     azi?: number;
     elev?: number;
     roll?: number;
@@ -129,30 +182,29 @@ interface Preset {
 }
 
 const PRESETS: Preset[] = [
-    { id: 'eye', labelKey: 'eyeLevel', elev: 0, zoom: 1, roll: 0 },
-    { id: 'low', labelKey: 'lowAngle', elev: -35, zoom: 1, roll: 0 },
-    { id: 'high', labelKey: 'highAngle', elev: 35, zoom: 1, roll: 0 },
-    { id: 'bird', labelKey: 'birdEye', elev: 75, zoom: 0.8, roll: 0 },
-    { id: 'worm', labelKey: 'wormEye', elev: -75, zoom: 0.9, roll: 0 },
+    { id: 'eye', labelKey: 'eyeLevel', descKey: 'eyeLevel', elev: 0, zoom: 1, roll: 0 },
+    { id: 'low', labelKey: 'lowAngle', descKey: 'lowAngle', elev: -35, zoom: 1, roll: 0 },
+    { id: 'high', labelKey: 'highAngle', descKey: 'highAngle', elev: 35, zoom: 1, roll: 0 },
+    { id: 'bird', labelKey: 'birdEye', descKey: 'birdEye', elev: 75, zoom: 0.8, roll: 0 },
+    { id: 'worm', labelKey: 'wormEye', descKey: 'wormEye', elev: -75, zoom: 0.9, roll: 0 },
     
     // New 6 Presets integrated naturally
-    // Updated Drone View: Higher elevation (75) and much wider zoom (0.3) for "High Altitude/Vast Scene"
-    { id: 'drone', labelKey: 'drone', elev: 75, zoom: 0.3, shotType: 'Drone View', roll: 0 },
-    { id: 'iso', labelKey: 'isometric', azi: 45, elev: 35, zoom: 0.9, shotType: 'Isometric', roll: 0 },
+    { id: 'drone', labelKey: 'drone', descKey: 'drone', elev: 75, zoom: 0.3, shotType: 'Drone View', roll: 0 },
+    { id: 'iso', labelKey: 'isometric', descKey: 'isometric', azi: 45, elev: 35, zoom: 0.9, shotType: 'Isometric', roll: 0 },
     
-    { id: 'wide', labelKey: 'wide', zoom: 0.6, roll: 0 },
-    { id: 'med', labelKey: 'medium', zoom: 1.0, roll: 0 },
-    { id: 'cu', labelKey: 'closeUp', zoom: 1.5, roll: 0 },
-    { id: 'face', labelKey: 'face', zoom: 2.2, elev: 0, shotType: 'Face Close-up', roll: 0 },
-    { id: 'ecu', labelKey: 'ecu', zoom: 2.2, roll: 0 },
-    { id: 'macro', labelKey: 'macro', zoom: 2.5, shotType: 'Macro', roll: 0 },
+    { id: 'wide', labelKey: 'wide', descKey: 'wide', zoom: 0.6, roll: 0 },
+    { id: 'med', labelKey: 'medium', descKey: 'medium', zoom: 1.0, roll: 0 },
+    { id: 'cu', labelKey: 'closeUp', descKey: 'closeUp', zoom: 1.5, roll: 0 },
+    { id: 'face', labelKey: 'face', descKey: 'face', zoom: 2.2, elev: 0, shotType: 'Face Close-up', roll: 0 },
+    { id: 'ecu', labelKey: 'ecu', descKey: 'ecu', zoom: 2.2, roll: 0 },
+    { id: 'macro', labelKey: 'macro', descKey: 'macro', zoom: 2.5, shotType: 'Macro', roll: 0 },
 
     // Dutch angle applies a visible tilt (roll)
-    { id: 'dutch', labelKey: 'dutch', shotType: 'Dutch Angle', roll: -15, zoom: 1.1 },
-    { id: 'fish', labelKey: 'fisheye', zoom: 0.7, shotType: 'Fisheye', roll: 0 },
-    { id: 'pano', labelKey: 'panorama', zoom: 0.5, shotType: 'Panorama', roll: 0 },
-    { id: 'ots', labelKey: 'ots', zoom: 1.2, shotType: 'Over-the-Shoulder Shot', roll: 0 },
-    { id: 'pov', labelKey: 'pov', zoom: 1.1, shotType: 'POV Shot', roll: 0 },
+    { id: 'dutch', labelKey: 'dutch', descKey: 'dutch', shotType: 'Dutch Angle', roll: -15, zoom: 1.1 },
+    { id: 'fish', labelKey: 'fisheye', descKey: 'fisheye', zoom: 0.7, shotType: 'Fisheye', roll: 0 },
+    { id: 'pano', labelKey: 'panorama', descKey: 'panorama', zoom: 0.5, shotType: 'Panorama', roll: 0 },
+    { id: 'ots', labelKey: 'ots', descKey: 'ots', zoom: 1.2, shotType: 'Over-the-Shoulder Shot', roll: 0 },
+    { id: 'pov', labelKey: 'pov', descKey: 'pov', zoom: 1.1, shotType: 'POV Shot', roll: 0 },
 ];
 
 function App() {
@@ -179,6 +231,10 @@ function App() {
   const [activeShotType, setActiveShotType] = useState<string>('');
 
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false);
+  const [promptResult, setPromptResult] = useState<string | null>(null);
+  const [isCopied, setIsCopied] = useState(false);
+  
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   
   const [results, setResults] = useState<GeneratedResult[]>([]);
@@ -249,8 +305,6 @@ function App() {
       if (preset.azi !== undefined) setAzimuth(preset.azi);
       if (preset.roll !== undefined) setRoll(preset.roll);
       if (preset.zoom !== undefined) setZoom(preset.zoom);
-      
-      // Update the explicit shot type (e.g. Dutch Angle)
       setActiveShotType(preset.shotType || '');
   };
 
@@ -297,6 +351,43 @@ function App() {
     }
   };
 
+  const handleGeneratePrompt = async () => {
+    if (!apiKey.trim()) {
+        setError(t.missingKey);
+        return;
+    }
+    if (!sourceImage.base64) return;
+
+    setIsGeneratingPrompt(true);
+    setError(null);
+    setPromptResult(null);
+
+    try {
+        const prompt = await generateCinematicPrompt(
+            apiKey, 
+            sourceImage.base64, 
+            azimuth, 
+            elevation, 
+            roll,
+            zoom,
+            activeShotType
+        );
+        setPromptResult(prompt);
+    } catch (err) {
+        setError(t.errorGen);
+    } finally {
+        setIsGeneratingPrompt(false);
+    }
+  };
+
+  const handleCopyPrompt = () => {
+      if (promptResult) {
+          navigator.clipboard.writeText(promptResult);
+          setIsCopied(true);
+          setTimeout(() => setIsCopied(false), 2000);
+      }
+  };
+
   const triggerUpload = () => fileInputRef.current?.click();
 
   const getLabel = (res: GeneratedResult) => {
@@ -323,7 +414,7 @@ function App() {
             <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-emerald-700 rounded-lg flex items-center justify-center shadow-lg shadow-green-900/20">
               <Rotate3d size={18} className="text-white" />
             </div>
-            <span className="font-bold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-zinc-400">
+            <span className="font-bold text-lg md:text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-zinc-400">
               {t.title}
             </span>
           </div>
@@ -385,10 +476,52 @@ function App() {
                       <li>{t.guideStep2}</li>
                       <li>{t.guideStep3}</li>
                       <li>{t.guideStep4}</li>
+                      <li>{t.guideStep5}</li>
                   </ul>
-                  <p className="mt-6 text-xs text-zinc-500 border-t border-zinc-800 pt-4">
-                      {t.note}
-                  </p>
+                  
+                  <div className="mt-6 pt-4 border-t border-zinc-800">
+                      <p className="text-[10px] text-zinc-500 mb-2">{t.note}</p>
+                      <p className="text-xs font-semibold text-zinc-400 flex items-center gap-1.5">
+                          <Phone size={12} /> {t.copyright}
+                      </p>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* Prompt Result Modal */}
+      {promptResult && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+              <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6 max-w-2xl w-full shadow-2xl relative flex flex-col gap-4">
+                  <div className="flex justify-between items-center">
+                       <h3 className="text-lg font-bold flex items-center gap-2 text-purple-400">
+                          <Sparkles size={20} />
+                          {t.promptTitle}
+                       </h3>
+                       <button onClick={() => setPromptResult(null)} className="text-zinc-500 hover:text-white">
+                           <X size={20} />
+                       </button>
+                  </div>
+                  
+                  <div className="bg-black/50 p-4 rounded-xl border border-zinc-800 font-mono text-sm text-zinc-300 leading-relaxed max-h-[300px] overflow-y-auto">
+                      {promptResult}
+                  </div>
+
+                  <div className="flex justify-end gap-3">
+                      <button 
+                        onClick={() => setPromptResult(null)}
+                        className="px-4 py-2 rounded-lg text-sm font-medium text-zinc-400 hover:text-white"
+                      >
+                          Close
+                      </button>
+                      <button 
+                        onClick={handleCopyPrompt}
+                        className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-all"
+                      >
+                          {isCopied ? <Check size={16} /> : <Copy size={16} />}
+                          {isCopied ? t.copied : t.copy}
+                      </button>
+                  </div>
               </div>
           </div>
       )}
@@ -529,18 +662,27 @@ function App() {
                  </div>
                  <div className="grid grid-cols-4 md:grid-cols-6 gap-2">
                      {PRESETS.map(preset => (
-                         <button
-                             key={preset.id}
-                             onClick={() => applyPreset(preset)}
-                             className={`
-                                flex flex-col items-center justify-center p-2 rounded-lg border text-[10px] font-medium transition-all text-center h-16
-                                ${activeShotType === preset.shotType && (preset.shotType || '') !== '' 
-                                    ? 'bg-purple-500/20 border-purple-500/50 text-purple-200' 
-                                    : 'bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:border-zinc-700 hover:text-zinc-200'}
-                             `}
-                         >
-                             <span>{t.presetLabels[preset.labelKey]}</span>
-                         </button>
+                         <div key={preset.id} className="relative group">
+                            <button
+                                onClick={() => applyPreset(preset)}
+                                className={`
+                                    w-full flex flex-col items-center justify-center p-2 rounded-lg border text-[10px] font-medium transition-all text-center h-16
+                                    ${activeShotType === preset.shotType && (preset.shotType || '') !== '' 
+                                        ? 'bg-orange-500/20 border-orange-500 text-orange-200 shadow-[0_0_10px_rgba(249,115,22,0.2)]' 
+                                        : 'bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:border-orange-500/50 hover:text-orange-200'}
+                                `}
+                            >
+                                <span>{t.presetLabels[preset.labelKey]}</span>
+                            </button>
+                            {/* Popup / Tooltip */}
+                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 bg-zinc-900 border border-zinc-700 p-3 rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 pointer-events-none">
+                                <p className="text-xs font-bold text-orange-400 mb-1">{t.presetLabels[preset.labelKey]}</p>
+                                <p className="text-[10px] text-zinc-300 leading-tight">
+                                    {t.presetDescs[preset.descKey]}
+                                </p>
+                                <div className="absolute bottom-[-5px] left-1/2 -translate-x-1/2 w-2 h-2 bg-zinc-900 border-b border-r border-zinc-700 rotate-45"></div>
+                            </div>
+                         </div>
                      ))}
                  </div>
             </div>
@@ -585,28 +727,50 @@ function App() {
                 </div>
             </div>
 
-            {/* Generate Button */}
-            <button
-                disabled={!sourceImage.base64 || isGenerating}
-                onClick={handleGenerate}
-                className="w-full py-4 bg-gradient-to-r from-emerald-600 to-purple-600 hover:from-emerald-500 hover:to-purple-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-semibold text-white shadow-lg shadow-purple-900/20 transition-all flex items-center justify-center gap-2 active:scale-[0.98] relative overflow-hidden"
-            >
-                {isGenerating ? (
-                    <>
-                        <Loader2 className="animate-spin" size={20} />
-                        {t.generating}
-                    </>
-                ) : (
-                    <>
-                        <span className="absolute left-4 text-[10px] font-mono opacity-50 bg-black/20 px-2 py-0.5 rounded flex items-center gap-1">
-                            {resolution} • {aspectRatio}
-                        </span>
-                        {t.generateBtn}
-                        {activeShotType && <span className="text-xs opacity-80">({t.presetLabels[PRESETS.find(p => p.shotType === activeShotType)?.labelKey as keyof typeof t.presetLabels]})</span>}
-                        <ChevronRight size={20} />
-                    </>
-                )}
-            </button>
+            {/* Action Buttons */}
+            <div className="flex gap-4">
+                {/* Generate Prompt Button */}
+                <button
+                    disabled={!sourceImage.base64 || isGenerating || isGeneratingPrompt}
+                    onClick={handleGeneratePrompt}
+                    className="flex-1 py-4 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-semibold text-zinc-200 border border-zinc-700 transition-all flex items-center justify-center gap-2 active:scale-[0.98]"
+                >
+                    {isGeneratingPrompt ? (
+                        <>
+                            <Loader2 className="animate-spin" size={20} />
+                            {t.generatingPrompt}
+                        </>
+                    ) : (
+                        <>
+                            <FileText size={20} className="text-zinc-400" />
+                            {t.generatePromptBtn}
+                        </>
+                    )}
+                </button>
+
+                {/* Generate View Button */}
+                <button
+                    disabled={!sourceImage.base64 || isGenerating || isGeneratingPrompt}
+                    onClick={handleGenerate}
+                    className="flex-[2] py-4 bg-gradient-to-r from-emerald-600 to-purple-600 hover:from-emerald-500 hover:to-purple-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-semibold text-white shadow-lg shadow-purple-900/20 transition-all flex items-center justify-center gap-2 active:scale-[0.98] relative overflow-hidden"
+                >
+                    {isGenerating ? (
+                        <>
+                            <Loader2 className="animate-spin" size={20} />
+                            {t.generating}
+                        </>
+                    ) : (
+                        <>
+                            <span className="absolute left-4 text-[10px] font-mono opacity-50 bg-black/20 px-2 py-0.5 rounded flex items-center gap-1">
+                                {resolution} • {aspectRatio}
+                            </span>
+                            {t.generateBtn}
+                            {activeShotType && <span className="text-xs opacity-80">({t.presetLabels[PRESETS.find(p => p.shotType === activeShotType)?.labelKey as keyof typeof t.presetLabels]})</span>}
+                            <ChevronRight size={20} />
+                        </>
+                    )}
+                </button>
+            </div>
             
             {error && (
                 <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-sm text-red-400">

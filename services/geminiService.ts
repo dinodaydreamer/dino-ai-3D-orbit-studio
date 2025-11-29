@@ -12,31 +12,19 @@ const normalizeAngle = (angle: number): number => {
 };
 
 /**
- * Generates a rotated view of the image based on azimuth, elevation, roll, zoom, resolution, and shot type.
+ * Calculates the descriptive strings for camera angles and styles.
  */
-export const generateRotatedView = async (
-  apiKey: string,
-  base64Image: string,
+export const getCameraParams = (
   rawAzimuth: number,
   rawElevation: number,
   rawRoll: number,
-  zoom: number = 1,
-  resolution: Resolution = '1K',
-  aspectRatio: AspectRatio = '1:1',
-  shotType: string = ''
-): Promise<string> => {
-  if (!apiKey) throw new Error("API Key is missing");
-  if (!base64Image) throw new Error("No image provided");
-
-  const ai = new GoogleGenAI({ apiKey });
-
-  // Normalize angles for the prompt logic
+  zoom: number,
+  shotType: string
+) => {
+  // Normalize angles
   const azimuth = normalizeAngle(rawAzimuth);
   const elevation = Math.max(-90, Math.min(90, rawElevation)); // Clamp elevation
   const roll = normalizeAngle(rawRoll);
-
-  // Clean base64 string
-  const cleanBase64 = base64Image.replace(/^data:image\/(png|jpeg|jpg|webp);base64,/, "");
 
   // --- Horizontal Logic ---
   const absAzimuth = Math.abs(azimuth);
@@ -80,7 +68,7 @@ export const generateRotatedView = async (
   else if (zoom < 0.6) distContext = "Extreme Long shot (Wide angle, subject small in frame)";
   else if (zoom < 0.85) distContext = "Long shot (Full body visible)";
 
-  // --- Shot Type Logic (Dutch, POV, OTS, etc.) ---
+  // --- Shot Type Logic ---
   let styleInstruction = "";
   if (shotType === "Dutch Angle" || Math.abs(roll) > 10) {
     styleInstruction = "Apply a Dutch Angle (Canted Angle). Tilt the camera horizon significantly to create tension or disorientation.";
@@ -102,25 +90,53 @@ export const generateRotatedView = async (
     styleInstruction = "Panoramic View. Wide aspect ratio composition, capturing the full width of the subject and environment.";
   }
 
+  return {
+    azimuth, elevation, roll, hDirection,
+    hContext, vContext, rContext, distContext, styleInstruction
+  };
+};
+
+/**
+ * Generates a rotated view of the image.
+ */
+export const generateRotatedView = async (
+  apiKey: string,
+  base64Image: string,
+  rawAzimuth: number,
+  rawElevation: number,
+  rawRoll: number,
+  zoom: number = 1,
+  resolution: Resolution = '1K',
+  aspectRatio: AspectRatio = '1:1',
+  shotType: string = ''
+): Promise<string> => {
+  if (!apiKey) throw new Error("API Key is missing");
+  if (!base64Image) throw new Error("No image provided");
+
+  const ai = new GoogleGenAI({ apiKey });
+  const cleanBase64 = base64Image.replace(/^data:image\/(png|jpeg|jpg|webp);base64,/, "");
+
+  const params = getCameraParams(rawAzimuth, rawElevation, rawRoll, zoom, shotType);
+
   const prompt = `
     Novel View Synthesis Task.
     Input: An image of an object.
     
     Target Transformation:
-    1. Rotate camera ${absAzimuth} degrees to the ${hDirection} around the object.
-    2. Move camera ${vContext.toLowerCase()}.
-    3. ${rContext ? rContext : 'Keep horizon level (0 degrees roll).'}
-    4. Camera Distance: ${distContext}.
+    1. Rotate camera ${Math.abs(params.azimuth)} degrees to the ${params.hDirection} around the object.
+    2. Move camera ${params.vContext.toLowerCase()}.
+    3. ${params.rContext ? params.rContext : 'Keep horizon level (0 degrees roll).'}
+    4. Camera Distance: ${params.distContext}.
     5. Aspect Ratio: ${aspectRatio}.
-    ${styleInstruction ? `6. Special Cinematic Style: ${styleInstruction}` : ''}
+    ${params.styleInstruction ? `6. Special Cinematic Style: ${params.styleInstruction}` : ''}
     
     Target View Description:
-    - Horizontal: ${hContext}
-    - Vertical: ${vContext}
-    - Roll: ${rContext || "Level"}
-    - Distance: ${distContext}
+    - Horizontal: ${params.hContext}
+    - Vertical: ${params.vContext}
+    - Roll: ${params.rContext || "Level"}
+    - Distance: ${params.distContext}
     ${shotType ? `- Shot Type: ${shotType}` : ''}
-    - Combined: A ${shotType || distContext}, ${vContext} from the ${hContext} perspective${rContext ? ' with a canted angle' : ''}.
+    - Combined: A ${shotType || params.distContext}, ${params.vContext} from the ${params.hContext} perspective${params.rContext ? ' with a canted angle' : ''}.
 
     Instructions:
     - Maintain the exact identity, structure, colors, and materials of the subject.
@@ -131,23 +147,19 @@ export const generateRotatedView = async (
     - Output: A high-quality photorealistic image of the object from this precise 3D angle.
   `;
 
-  // --- Model Selection Strategy ---
-  // Standard (1K) -> gemini-2.5-flash-image (Faster, efficient)
-  // High Res (2K, 4K) -> gemini-3-pro-image-preview (High fidelity, supports explicit size config)
-  
+  // Model Selection
   const modelName = resolution === '1K' 
     ? 'gemini-2.5-flash-image' 
     : 'gemini-3-pro-image-preview';
 
   const config: any = {
       imageConfig: {
-          aspectRatio: aspectRatio // Supported values: "1:1", "3:4", "4:3", "9:16", "16:9"
+          aspectRatio: aspectRatio 
       }
   };
   
-  // Image Config only needed for Pro model to specify 2K/4K
   if (resolution !== '1K') {
-      config.imageConfig.imageSize = resolution; // "2K" or "4K"
+      config.imageConfig.imageSize = resolution; 
   }
 
   try {
@@ -178,3 +190,67 @@ export const generateRotatedView = async (
     throw error;
   }
 };
+
+/**
+ * Generates a text prompt describing the image from the specified angle.
+ * Uses Gemini Flash for text generation.
+ */
+export const generateCinematicPrompt = async (
+    apiKey: string,
+    base64Image: string,
+    rawAzimuth: number,
+    rawElevation: number,
+    rawRoll: number,
+    zoom: number = 1,
+    shotType: string = ''
+  ): Promise<string> => {
+    if (!apiKey) throw new Error("API Key is missing");
+    if (!base64Image) throw new Error("No image provided");
+  
+    const ai = new GoogleGenAI({ apiKey });
+    const cleanBase64 = base64Image.replace(/^data:image\/(png|jpeg|jpg|webp);base64,/, "");
+    
+    const params = getCameraParams(rawAzimuth, rawElevation, rawRoll, zoom, shotType);
+  
+    // We want the AI to analyze the image content AND apply our camera settings to the description
+    const prompt = `
+      You are an expert AI Art Prompter.
+      
+      Task:
+      1. Analyze the content of the provided image (Subject, Appearance, Clothing, Action, Lighting, Environment).
+      2. Construct a detailed text-to-image prompt for this subject, BUT describe it as if seen from the following specific camera angle:
+      
+      CAMERA SETTINGS:
+      - Angle: ${params.hContext} and ${params.vContext}
+      - Distance: ${params.distContext}
+      - Tilt/Roll: ${params.rContext || "Level horizon"}
+      - Cinematic Style: ${params.styleInstruction || "Standard cinematic lighting"}
+      
+      OUTPUT FORMAT:
+      Return ONLY the prompt string. Do not add markdown or explanations.
+      
+      The prompt should follow this structure:
+      "[Camera View/Shot Type] of [Detailed Subject Description], [Action/Pose], [Environment/Lighting], [Technical Camera Details]"
+      
+      Example:
+      "A high-angle bird's eye view of a cyberpunk samurai standing in neon rain, glowing katana in hand, looking up towards the camera, dramatic top-down lighting, 4k, highly detailed."
+    `;
+  
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: {
+          parts: [
+              { text: prompt },
+              { inlineData: { mimeType: 'image/png', data: cleanBase64 } }
+          ]
+        }
+      });
+  
+      return response.text?.trim() || "Failed to generate prompt.";
+  
+    } catch (error) {
+      console.error("Prompt Generation Error:", error);
+      throw error;
+    }
+  };
