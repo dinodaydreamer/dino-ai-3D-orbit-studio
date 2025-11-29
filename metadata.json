@@ -1,0 +1,5 @@
+{
+  "name": "ArcVision 3D - AI Angle Generator",
+  "description": "Interactive 3D workspace to rotate and generate novel angles of uploaded images using Gemini AI.",
+  "requestFramePermissions": []
+}
